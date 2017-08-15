@@ -10,7 +10,10 @@ import Utils
 import matplotlib.pyplot as plt
 
 from nets.SqueezeNet import SqueezeNet
+from nets.SqueezeNetOrig import SqueezeNetOrig
 import torch
+import torch.nn.utils as nnutils
+from torch.autograd import Variable
 
 
 def main():
@@ -22,9 +25,13 @@ def main():
     torch.cuda.set_device(ARGS.gpu)
     torch.cuda.device(ARGS.gpu)
 
-    net = SqueezeNet().cuda()
-    criterion = torch.nn.MSELoss().cuda()
-    optimizer = torch.optim.Adadelta(net.parameters())
+    net1 = SqueezeNet().cuda()
+    criterion1 = torch.nn.MSELoss().cuda()
+    optimizer1 = torch.optim.Adadelta(net1.parameters())
+
+    net2 = SqueezeNetOrig().cuda()
+    criterion2 = torch.nn.MSELoss().cuda()
+    optimizer2 = torch.optim.Adadelta(net2.parameters())
 
     if ARGS.resume_path is not None:
         cprint('Resuming w/ ' + ARGS.resume_path, 'yellow')
@@ -32,7 +39,7 @@ def main():
         net.load_state_dict(save_data)
 
     data = Data.Data()
-    batch = Batch.Batch(net)
+    batch = Batch.Batch(net1)
 
     # Maitains a list of all inputs to the network, and the loss and outputs for
     # each of these runs. This can be used to sort the data by highest loss and
@@ -41,10 +48,6 @@ def main():
     data_moment_loss_record = {}
     rate_counter = Utils.RateCounter()
 
-    def run_net(data_index):
-        batch.fill(data, data_index)  # Get batches ready
-        batch.forward(optimizer, criterion, data_moment_loss_record)
-
     try:
         epoch = 0
         avg_train_loss = Utils.LossLog()
@@ -52,18 +55,32 @@ def main():
         while True:
             logging.debug('Starting training epoch #{}'.format(epoch))
 
-            net.train()  # Train mode
+            net1.train()  # Train mode
+            net2.train()  # Train mode
             epoch_train_loss = Utils.LossLog()
             print_counter = Utils.MomentCounter(ARGS.print_moments)
 
             while not data.train_index.epoch_complete:  # Epoch of training
-                run_net(data.train_index)  # Run network
-                batch.backward(optimizer)  # Backpropagate
+                # Extract all data
+                camera_data, metadata, target_data = batch.fill(data, data.train_index)
+                dcamera, fcamera = camera_data.chunk(2, 0)
+                dtarget, ftarget = target_data.chunk(2, 0)
 
-                # Logging Loss
-                epoch_train_loss.add(data.train_index.ctr, batch.loss.data[0])
+                # Forward Net1
+                optimizer1.zero_grad()
+                outputs1 = net1(Variable(camera_data), Variable(metadata)).cuda()
+                loss1 = criterion1(outputs1, Variable(target_data))
+                loss1.backward()
+                nnutils.clip_grad_norm(net1.parameters(), 1.0)
+                optimizer1.step()
 
-                rate_counter.step()
+                # Forward Net2
+                optimizer2.zero_grad()
+                outputs2 = net2(Variable(dcamera)).cuda()
+                loss2 = criterion2(outputs2, Variable(dtarget))
+                loss2.backward()
+                nnutils.clip_grad_norm(net2.parameters(), 1.0)
+                optimizer2.step()
 
                 if print_counter.step(data.train_index):
                     epoch_train_loss.export_csv(
@@ -71,11 +88,13 @@ def main():
                         (epoch,))
                     print('mode = train\n'
                           'ctr = {}\n'
-                          'most recent loss = {}\n'
+                          'net1 most recent loss = {}\n'
+                          'net2 most recent loss = {}\n'
                           'epoch progress = {} \n'
                           'epoch = {}\n'
                           .format(data.train_index.ctr,
-                                  batch.loss.data[0],
+                                  loss1.data[0],
+                                  loss2.data[0],
                                   100. * data.train_index.ctr /
                                   len(data.train_index.valid_data_moments),
                                   epoch))
@@ -86,56 +105,16 @@ def main():
                         plt.clf()  # clears figure
                         print_timer.reset()
 
-            data.train_index.epoch_complete = False
-            logging.info(
-                'Avg Train Loss = {}'.format(
-                    epoch_train_loss.average()))
-            avg_train_loss.add(epoch, epoch_train_loss.average())
-            avg_train_loss.export_csv('logs/avg_train_loss.csv')
-            logging.debug('Finished training epoch #{}'.format(epoch))
-            logging.debug('Starting validation epoch #{}'.format(epoch))
-            epoch_val_loss = Utils.LossLog()
-
-            print_counter = Utils.MomentCounter(ARGS.print_moments)
-
-            net.eval()  # Evaluate mode
-            while not data.val_index.epoch_complete:
-                run_net(data.val_index)  # Run network
-                epoch_val_loss.add(data.train_index.ctr, batch.loss.data[0])
-
-                if print_counter.step(data.val_index):
-                    epoch_val_loss.export_csv(
-                        'logs/epoch%02d_val_loss.csv' %
-                        (epoch,))
-                    print('mode = validation\n'
-                          'ctr = {}\n'
-                          'average val loss = {}\n'
-                          'epoch progress = {} %\n'
-                          'epoch = {}\n'
-                          .format(data.val_index.ctr,
-                                  epoch_val_loss.average(),
-                                  100. * data.val_index.ctr /
-                                  len(data.val_index.valid_data_moments),
-                                  epoch))
-
             data.val_index.epoch_complete = False
-            avg_val_loss.add(epoch, epoch_val_loss.average())
-            avg_val_loss.export_csv('logs/avg_val_loss.csv')
-            logging.debug('Finished validation epoch #{}'.format(epoch))
-            logging.info('Avg Val Loss = {}'.format(epoch_val_loss.average()))
-            Utils.save_net(
-                "epoch%02d_save_%f" %
-                (epoch, epoch_val_loss.average()), net)
+            Utils.save_net('DFepoch{}'.format(epoch), net1)
+            Utils.save_net('Depoch{}'.format(epoch), net2)
             epoch += 1
-    except Exception:
-        logging.error(traceback.format_exc())  # Log exception
 
+    except Exception:
         # Interrupt Saves
-        Utils.save_net('interrupt_save', net)
-        epoch_train_loss.export_csv(
-            'logs/interrupt%02d_train_loss.csv' %
-            (epoch,))
-        epoch_val_loss.export_csv('logs/interrupt%02d_val_loss.csv' % (epoch,))
+        import traceback
+        traceback.print_exc()
+        Utils.save_net('interrupt_save', net1)
 
 
 if __name__ == '__main__':

@@ -38,7 +38,11 @@ class Batch:
             ARGS.batch_size, ARGS.nframes * 6, 94, 168).cuda()
         self.metadata = torch.FloatTensor(ARGS.batch_size, 128, 23, 41).cuda()
         self.target_data = torch.FloatTensor(ARGS.batch_size, 20).cuda()
-        for data_number in range(ARGS.batch_size):
+    
+        ARGS.require_one = ('direct',)
+
+        data_num = 0
+        for data_number in range(ARGS.batch_size/2):
             data_point = None
             while data_point is None:
                 e = data.next(data_index)
@@ -48,7 +52,23 @@ class Batch:
                 data_point = data.get_data(run_code, seg_num, offset)
 
             self.data_ids.append((run_code, seg_num, offset))
-            self.data_into_batch(data_point, data_number)
+            self.data_into_batch(data_point, data_num)
+            data_num += 1
+        ARGS.require_one = ('follow',)
+
+        for data_number in range(ARGS.batch_size/2):
+            data_point = None
+            while data_point is None:
+                e = data.next(data_index)
+                run_code = e[3]
+                seg_num = e[0]
+                offset = e[1]
+                data_point = data.get_data(run_code, seg_num, offset)
+
+            self.data_ids.append((run_code, seg_num, offset))
+            self.data_into_batch(data_point, data_num)
+            data_num += 1
+        return self.camera_data, self.metadata, self.target_data
 
     def data_into_batch(self, data, data_number):
         self.names.insert(0, data['name'])
@@ -106,14 +126,6 @@ class Batch:
         self.outputs = self.net(Variable(self.camera_data),
                                 Variable(self.metadata)).cuda()
         self.loss = criterion(self.outputs, Variable(self.target_data))
-
-        for b in range(ARGS.batch_size):
-            data_id = self.data_ids[b]
-            t = self.target_data[b].cpu().numpy()
-            o = self.outputs[b].data.cpu().numpy()
-            a = (self.target_data[b] - self.outputs[b].data).cpu().numpy()
-            loss = np.sqrt(a * a).mean()
-            data_moment_loss_record[(data_id, tuple(t), tuple(o))] = loss
 
     def backward(self, optimizer):
         self.loss.backward()
