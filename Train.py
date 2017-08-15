@@ -33,10 +33,10 @@ def main():
     criterion2 = torch.nn.MSELoss().cuda()
     optimizer2 = torch.optim.Adadelta(net2.parameters())
 
-    if ARGS.resume_path is not None:
-        cprint('Resuming w/ ' + ARGS.resume_path, 'yellow')
-        save_data = torch.load(ARGS.resume_path)
-        net.load_state_dict(save_data)
+    save_data = torch.load('save/DFepoch1.weights')
+    net1.load_state_dict(save_data)
+    save_data = torch.load('save/Depoch1.weights')
+    net2.load_state_dict(save_data)
 
     data = Data.Data()
     batch = Batch.Batch(net1)
@@ -49,7 +49,7 @@ def main():
     rate_counter = Utils.RateCounter()
 
     try:
-        epoch = 0
+        epoch = 1
         avg_train_loss = Utils.LossLog()
         avg_val_loss = Utils.LossLog()
         while True:
@@ -105,7 +105,7 @@ def main():
                         plt.clf()  # clears figure
                         print_timer.reset()
 
-            data.val_index.epoch_complete = False
+            data.train_index.epoch_complete = False
             Utils.save_net('DFepoch{}'.format(epoch), net1)
             Utils.save_net('Depoch{}'.format(epoch), net2)
             epoch += 1
