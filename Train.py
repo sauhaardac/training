@@ -33,10 +33,10 @@ def main():
     criterion2 = torch.nn.MSELoss().cuda()
     optimizer2 = torch.optim.Adadelta(net2.parameters())
 
-    save_data = torch.load('save/DFepoch1.weights')
-    net1.load_state_dict(save_data)
-    save_data = torch.load('save/Depoch1.weights')
-    net2.load_state_dict(save_data)
+    # save_data = torch.load('save/DFepoch1.weights')
+    # net1.load_state_dict(save_data)
+    # save_data = torch.load('save/Depoch1.weights')
+    # net2.load_state_dict(save_data)
 
     data = Data.Data()
     batch = Batch.Batch(net1)
@@ -49,7 +49,7 @@ def main():
     rate_counter = Utils.RateCounter()
 
     try:
-        epoch = 1
+        epoch = 0
         avg_train_loss = Utils.LossLog()
         avg_val_loss = Utils.LossLog()
         while True:
