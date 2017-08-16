@@ -15,10 +15,10 @@ parser.set_defaults(display=True)
 parser.add_argument('--verbose', default=True, type=bool,
                     help='Debugging mode')
 parser.add_argument('--aruco', default=True, type=bool, help='Use Aruco data')
-parser.add_argument('--data-path', default='/home/dataset/' +
+parser.add_argument('--data-path', default='/hostroot/home/dataset/' +
                     'bair_car_data', type=str)
-parser.add_argument('--resume-path', default=None, type=str, help='Path to' +
-                    ' resume file containing network state dictionary')
+parser.add_argument('--resume-path', default=None, type=str, nargs='+',
+                    help='Paths to resume file containing network state dict')
 parser.add_argument('--save-path', default='save', type=str, help='Path to' +
                     ' folder to save net state dictionaries.')
 
@@ -35,7 +35,7 @@ parser.add_argument(
     nargs='+',
     help='Skips these labels in data.')
 
-parser.add_argument('--require-one', default=(), type=str, nargs='+',
+parser.add_argument('--require-one', default=('direct',), type=str, nargs='+',
                     help='Skips data without these labels in data.')
 parser.add_argument('--use-states', default=(1, 3, 5, 6, 7), type=str,
                     nargs='+', help='Skips data outside of these states.')

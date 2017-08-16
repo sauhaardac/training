@@ -21,8 +21,8 @@ class Batch:
         self.outputs = None
         self.loss = None
 
-    def __init__(self, net):
-        self.net = net
+    def __init__(self):
+        self.net = None
         self.camera_data = None
         self.metadata = None
         self.target_data = None
@@ -49,6 +49,8 @@ class Batch:
 
             self.data_ids.append((run_code, seg_num, offset))
             self.data_into_batch(data_point, data_number)
+
+        return self.camera_data, self.metadata, self.target_data
 
     def data_into_batch(self, data, data_number):
         self.names.insert(0, data['name'])
