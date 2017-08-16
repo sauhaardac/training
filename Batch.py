@@ -54,7 +54,7 @@ class Batch:
             self.data_ids.append((run_code, seg_num, offset))
             self.data_into_batch(data_point, data_num)
             data_num += 1
-        ARGS.require_one = ('follow',)
+        ARGS.require_one = ('furtive',)
 
         for data_number in range(ARGS.batch_size/2):
             data_point = None
