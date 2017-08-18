@@ -31,7 +31,7 @@ class Batch:
         self.loss = None
         self.data_ids = None
 
-    def fill(self, data, data_index):
+    def fill(self, data, data_index, require1, require2):
         self.clear()
         self.data_ids = []
         self.camera_data = torch.FloatTensor(
@@ -39,7 +39,7 @@ class Batch:
         self.metadata = torch.FloatTensor(ARGS.batch_size, 6, 11, 20).cuda()
         self.target_data = torch.FloatTensor(ARGS.batch_size, 20).cuda()
     
-        ARGS.require_one = ('direct',)
+        ARGS.require_one = require1
 
         data_num = 0
         for data_number in range(ARGS.batch_size/2):
@@ -55,7 +55,7 @@ class Batch:
             self.data_into_batch(data_point, data_num)
             data_num += 1
 
-        ARGS.require_one = ('follow',)
+        ARGS.require_one = require2
 
         for data_number in range(ARGS.batch_size/2):
             data_point = None
