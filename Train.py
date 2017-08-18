@@ -49,7 +49,7 @@ def main():
     rate_counter = Utils.RateCounter()
 
     try:
-        epoch = 3
+        epoch = 0
         avg_train_loss = Utils.LossLog()
         avg_val_loss = Utils.LossLog()
         while True:
