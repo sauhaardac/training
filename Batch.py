@@ -21,8 +21,8 @@ class Batch:
         self.outputs = None
         self.loss = None
 
-    def __init__(self, net):
-        self.net = net
+    def __init__(self):
+        self.net = None
         self.camera_data = None
         self.metadata = None
         self.target_data = None
@@ -36,13 +36,13 @@ class Batch:
         self.data_ids = []
         self.camera_data = torch.FloatTensor(
             ARGS.batch_size, ARGS.nframes * 6, 94, 168).cuda()
-        self.metadata = torch.FloatTensor(ARGS.batch_size, 6, 11, 20).cuda()
+        self.metadata = torch.FloatTensor(ARGS.batch_size, 3, 11, 20).cuda()
         self.target_data = torch.FloatTensor(ARGS.batch_size, 20).cuda()
     
         ARGS.require_one = ('direct',)
 
         data_num = 0
-        for data_number in range(ARGS.batch_size/2):
+        for data_number in range(ARGS.batch_size/3):
             data_point = None
             while data_point is None:
                 e = data.next(data_index)
@@ -57,7 +57,7 @@ class Batch:
 
         ARGS.require_one = ('follow',)
 
-        for data_number in range(ARGS.batch_size/2):
+        for data_number in range(ARGS.batch_size/3):
             data_point = None
             while data_point is None:
                 e = data.next(data_index)
@@ -69,6 +69,23 @@ class Batch:
             self.data_ids.append((run_code, seg_num, offset))
             self.data_into_batch(data_point, data_num)
             data_num += 1
+
+
+        ARGS.require_one = ('furtive',)
+
+        for data_number in range(ARGS.batch_size/3):
+            data_point = None
+            while data_point is None:
+                e = data.next(data_index)
+                run_code = e[3]
+                seg_num = e[0]
+                offset = e[1]
+                data_point = data.get_data(run_code, seg_num, offset)
+
+            self.data_ids.append((run_code, seg_num, offset))
+            self.data_into_batch(data_point, data_num)
+            data_num += 1
+
         return self.camera_data, self.metadata, self.target_data
 
     def data_into_batch(self, data, data_number):
@@ -86,10 +103,9 @@ class Batch:
         self.camera_data[data_number, :, :, :] = camera_data
 
         # Convert Behavioral Modes/Metadata to PyTorch Ready Tensors
-        metadata = torch.FloatTensor(6, 11, 20).cuda()
-        metadata_count = 5
-        for cur_label in ['racing', 'caffe', 'follow', 'direct', 'play',
-                          'furtive']:
+        metadata = torch.FloatTensor(3, 11, 20).cuda()
+        metadata_count = 2
+        for cur_label in ['follow', 'direct', 'furtive']:
             if cur_label == 'caffe':
                 if data['states'][0]:
                     metadata[metadata_count, :, :] = 1.
@@ -101,6 +117,7 @@ class Batch:
                 else:
                     metadata[metadata_count, :, :] = 0.
             metadata_count -= 1
+
         self.metadata[data_number, :, :, :] = metadata
 
         # Figure out which timesteps of labels to get

@@ -15,107 +15,184 @@ import torch
 import torch.nn.utils as nnutils
 from torch.autograd import Variable
 
+class MTL:
+    def __init__(self, load_path=None):
+        self.net1 = SqueezeNet().cuda()
+        self.criterion1 = torch.nn.MSELoss().cuda()
+        self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
+        self.loss = Utils.LossLog()
+
+        if load_path is not None:
+            save_data = torch.load(load_path)
+            self.net1.load_state_dict(save_data)
+
+    def forward(self, camera_data, metadata, target_data):
+        self.optimizer1.zero_grad()
+        outputs1 = self.net1(Variable(camera_data), Variable(metadata)).cuda()
+        self.loss1 = self.criterion1(outputs1, Variable(target_data))
+        self.loss.add(self.loss1.data[0])
+    
+    def backward(self):
+        self.loss1.backward()
+        nnutils.clip_grad_norm(self.net1.parameters(), 1.0)
+        self.optimizer1.step()
+        
+    def get_average():
+        return self.loss.average()
+
+    def reset_loss():
+        self.loss = Utils.LossLog()
+
+    def save_net(save_name, epoch):
+        Utils.save_net(save_name + epoch, self.net1)
+
+class NonMTL:
+    def __init__(self, load_path=None):
+        self.net1 = SqueezeNetOrig().cuda()
+        self.criterion1 = torch.nn.MSELoss().cuda()
+        self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
+        self.loss = Utils.LossLog()
+        self.net1.train()  # Train mode
+
+        if load_path is not None:
+            save_data = torch.load(load_path)
+            self.net1.load_state_dict(save_data)
+
+    def forward(self, camera_data, target_data):
+        self.optimizer1.zero_grad()
+        outputs1 = self.net1(Variable(camera_data)).cuda()
+        self.loss1 = self.criterion1(outputs1, Variable(target_data))
+        self.loss.add(self.loss1.data[0])
+    
+    def backward(self):
+        self.loss1.backward()
+        nnutils.clip_grad_norm(self.net1.parameters(), 1.0)
+        self.optimizer1.step()
+        
+    def get_average():
+        return loss.average()
+
+    def reset_loss():
+        self.loss = Utils.LossLog()
 
 def main():
     logging.basicConfig(filename='training.log', level=logging.DEBUG)
     logging.debug(ARGS)  # Log arguments
+
+    Utils.csvwrite('VALIDATION_LOSS.csv', ['mtl', 
+                   'direct', 'follow',
+                   'furtive', 'control'])
+    epoch = ARGS.epoch
+    if epoch == 0:
+        mtl = MTL()
+        direct = NonMTL()
+        follow = NonMTL()
+        furtive = NonMTL()
+        control = NonMTL()
+    else:
+        epoch = str(epoch)
+        mtl = MTL(load_path='save/mtl'+epoch)
+        direct = NonMTL(load_path='save/mtl'+epoch)
+        follow = NonMTL(load_path='save/follow'+epoch)
+        furtive = NonMTL(load_path='save/furtive'+epoch)
+        control = NonMTL(load_path='save/control'+epoch)
+        epoch = int(epoch)
 
     # Set Up PyTorch Environment
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.set_device(ARGS.gpu)
     torch.cuda.device(ARGS.gpu)
 
-    net1 = SqueezeNet().cuda()
-    criterion1 = torch.nn.MSELoss().cuda()
-    optimizer1 = torch.optim.Adadelta(net1.parameters())
-
-    net2 = SqueezeNetOrig().cuda()
-    criterion2 = torch.nn.MSELoss().cuda()
-    optimizer2 = torch.optim.Adadelta(net2.parameters())
-
-    save_data = torch.load('save/DFepoch2.weights')
-    net1.load_state_dict(save_data)
-    save_data = torch.load('save/Depoch2.weights')
-    net2.load_state_dict(save_data)
-
     data = Data.Data()
-    batch = Batch.Batch(net1)
+    batch = Batch.Batch()
 
-    # Maitains a list of all inputs to the network, and the loss and outputs for
-    # each of these runs. This can be used to sort the data by highest loss and
-    # visualize, to do so run:
-    # display_sort_trial_loss(data_moment_loss_record , data)
-    data_moment_loss_record = {}
     rate_counter = Utils.RateCounter()
 
     try:
-        epoch = 0
-        avg_train_loss = Utils.LossLog()
-        avg_val_loss = Utils.LossLog()
-        while True:
-            logging.debug('Starting training epoch #{}'.format(epoch))
+        logging.debug('Starting training epoch #{}'.format(epoch))
 
-            net1.train()  # Train mode
-            net2.train()  # Train mode
-            epoch_train_loss = Utils.LossLog()
-            print_counter = Utils.MomentCounter(ARGS.print_moments)
+        print_counter = Utils.MomentCounter(ARGS.print_moments)
 
-            while not data.train_index.epoch_complete:  # Epoch of training
-                # Extract all data
-                camera_data, metadata, target_data = batch.fill(data, data.train_index)
-                dcamera, fcamera = camera_data.chunk(2, 0)
-                dtarget, ftarget = target_data.chunk(2, 0)
+        while not data.train_index.epoch_complete:  # Epoch of training
+            # Extract all data
+            camera_data, metadata, target_data = batch.fill(data, data.train_index)
+            dcamera, focamera, fucamera = camera_data.chunk(3, 0)
+            dtarget, fotarget, futarget = target_data.chunk(3, 0)
 
-                # Forward Net1
-                optimizer1.zero_grad()
-                outputs1 = net1(Variable(camera_data), Variable(metadata)).cuda()
-                loss1 = criterion1(outputs1, Variable(target_data))
-                loss1.backward()
-                nnutils.clip_grad_norm(net1.parameters(), 1.0)
-                optimizer1.step()
+            mtl.forward(camera_data, metadata, target_data)
+            mtl.backward()
 
-                # Forward Net2
-                optimizer2.zero_grad()
-                outputs2 = net2(Variable(dcamera)).cuda()
-                loss2 = criterion2(outputs2, Variable(dtarget))
-                loss2.backward()
-                nnutils.clip_grad_norm(net2.parameters(), 1.0)
-                optimizer2.step()
+            control.forward(camera_data, target_data)
+            control.backward()
 
-                if print_counter.step(data.train_index):
-                    epoch_train_loss.export_csv(
-                        'logs/epoch%02d_train_loss.csv' %
-                        (epoch,))
-                    print('mode = train\n'
-                          'ctr = {}\n'
-                          'net1 most recent loss = {}\n'
-                          'net2 most recent loss = {}\n'
-                          'epoch progress = {} \n'
-                          'epoch = {}\n'
-                          .format(data.train_index.ctr,
-                                  loss1.data[0],
-                                  loss2.data[0],
-                                  100. * data.train_index.ctr /
-                                  len(data.train_index.valid_data_moments),
-                                  epoch))
+            direct.forward(dcamera, dtarget)
+            direct.backward()
 
-                    if ARGS.display:
-                        batch.display()
-                        plt.figure('loss')
-                        plt.clf()  # clears figure
-                        print_timer.reset()
+            follow.forward(focamera, fotarget)
+            follow.backward()
 
-            data.train_index.epoch_complete = False
-            Utils.save_net('DFepoch{}'.format(epoch), net1)
-            Utils.save_net('Depoch{}'.format(epoch), net2)
-            epoch += 1
+            furtive.forward(fucamera, futarget)
+            furtive.backward()
+
+            if print_counter.step(data.train_index):
+                print('mode = train\n'
+                      'ctr = {}\n'
+                      'epoch progress = {} \n'
+                      'epoch = {}\n'
+                      .format(data.train_index.ctr,
+                              100. * data.train_index.ctr /
+                              len(data.train_index.valid_data_moments),
+                              epoch))
+
+        data.train_index.epoch_complete = False
+
+        mtl.save('save/mtl', epoch)
+        direct.save('save/direct', epoch)
+        follow.save('save/follow', epoch)
+        furtive.save('save/furtive', epoch)
+        control.save('save/control', epoch)
+
+        while not data.val_index.epoch_complete:  # Epoch of training
+            # Extract all data
+            camera_data, metadata, target_data = batch.fill(data, data.val_index)
+            dcamera, focamera, fucamera = camera_data.chunk(3, 0)
+            dtarget, fotarget, futarget = target_data.chunk(3, 0)
+
+            mtl.forward(camera_data, metadata, target_data)
+            mtl.backward()
+
+            control.forward(camera_data, target_data)
+            control.backward()
+
+            direct.forward(dcamera, dtarget)
+            direct.backward()
+
+            follow.forward(focamera, fotarget)
+            follow.backward()
+
+            furtive.forward(fucamera, futarget)
+            furtive.backward()
+
+            if print_counter.step(data.val_index):
+                print('mode = train\n'
+                      'ctr = {}\n'
+                      'epoch progress = {} \n'
+                      'epoch = {}\n'
+                      .format(data.val_index.ctr,
+                              100. * data.val_index.ctr /
+                              len(data.val_index.valid_data_moments),
+                              epoch))
+
+        Utils.csvwrite('VALIDATION_LOSS.csv', [mtl.get_average(), 
+                       direct.get_average(), follow.get_average(),
+                       furtive.get_average(), control.get_average()])
+
+        data.val_index.epoch_complete = False
+        epoch += 1
 
     except Exception:
-        # Interrupt Saves
         import traceback
         traceback.print_exc()
-        Utils.save_net('interrupt_save', net1)
-
 
 if __name__ == '__main__':
     main()
