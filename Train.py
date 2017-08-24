@@ -16,72 +16,96 @@ import torch.nn.utils as nnutils
 from torch.autograd import Variable
 
 class MTL:
-    def __init__(self, load_path=None):
+    def __init__(self, load_path=None, loss_list=None):
         self.net1 = SqueezeNet().cuda()
         self.criterion1 = torch.nn.MSELoss().cuda()
         self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
-        self.loss = Utils.LossLog()
+        self.loss = {'default':Utils.LossLog()}
 
-        if load_path is not None:
-            save_data = torch.load(load_path)
-            self.net1.load_state_dict(save_data)
-
-    def forward(self, camera_data, metadata, target_data):
-        self.optimizer1.zero_grad()
-        outputs1 = self.net1(Variable(camera_data), Variable(metadata)).cuda()
-        self.loss1 = self.criterion1(outputs1, Variable(target_data))
-        self.loss.add(self.loss1.data[0])
-    
-    def backward(self):
-        self.loss1.backward()
-        nnutils.clip_grad_norm(self.net1.parameters(), 1.0)
-        self.optimizer1.step()
-        
-    def get_average():
-        return self.loss.average()
-
-    def reset_loss():
-        self.loss = Utils.LossLog()
-
-    def save_net(save_name, epoch):
-        Utils.save_net(save_name + epoch, self.net1)
-
-class NonMTL:
-    def __init__(self, load_path=None):
-        self.net1 = SqueezeNetOrig().cuda()
-        self.criterion1 = torch.nn.MSELoss().cuda()
-        self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
-        self.loss = Utils.LossLog()
+        if loss_list is not None:
+            for item in loss_list:
+                self.loss[item] = Utils.LossLog()
+       
         self.net1.train()  # Train mode
 
         if load_path is not None:
-            save_data = torch.load(load_path)
+            save_data = torch.load(load_path + '.weights')
             self.net1.load_state_dict(save_data)
 
-    def forward(self, camera_data, target_data):
+    def forward(self, camera_data, metadata, target_data, key='default'):
         self.optimizer1.zero_grad()
-        outputs1 = self.net1(Variable(camera_data)).cuda()
+        outputs1 = self.net1(Variable(camera_data), Variable(metadata)).cuda()
         self.loss1 = self.criterion1(outputs1, Variable(target_data))
-        self.loss.add(self.loss1.data[0])
+        self.loss[key].add(self.loss1.data[0])
     
     def backward(self):
         self.loss1.backward()
         nnutils.clip_grad_norm(self.net1.parameters(), 1.0)
         self.optimizer1.step()
         
-    def get_average():
-        return loss.average()
+    def get_average(self, key='default'):
+        return self.loss[key].average()
 
-    def reset_loss():
-        self.loss = Utils.LossLog()
+    def reset_loss(self, loss_list=None):
+        self.loss = {'default':Utils.LossLog()}
+        if loss_list is not None:
+            for item in loss_list:
+                self.loss[item] = Utils.LossLog()
+
+    def save(self, save_name, epoch):
+        Utils.save_net(save_name + str(epoch), self.net1)
+
+    def val(self):
+        self.net1.eval()
+
+class NonMTL:
+    def __init__(self, load_path=None, loss_list=None):
+        self.net1 = SqueezeNetOrig().cuda()
+        self.criterion1 = torch.nn.MSELoss().cuda()
+        self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
+
+        self.loss = {'default':Utils.LossLog()}
+
+        if loss_list is not None:
+            for item in loss_list:
+                self.loss[item] = Utils.LossLog()
+
+        self.net1.train()  # Train mode
+
+        if load_path is not None:
+            save_data = torch.load(load_path + '.weights')
+            self.net1.load_state_dict(save_data)
+
+    def forward(self, camera_data, target_data, key='default'):
+        self.optimizer1.zero_grad()
+        outputs1 = self.net1(Variable(camera_data)).cuda()
+        self.loss1 = self.criterion1(outputs1, Variable(target_data))
+        self.loss[key].add(self.loss1.data[0])
+    
+    def backward(self):
+        self.loss1.backward()
+        nnutils.clip_grad_norm(self.net1.parameters(), 1.0)
+        self.optimizer1.step()
+        
+    def get_average(self, key='default'):
+        return self.loss[key].average()
+
+    def reset_loss(self, loss_list=None):
+        self.loss = {'default':Utils.LossLog()}
+        if loss_list is not None:
+            for item in loss_list:
+                self.loss[item] = Utils.LossLog()
+
+    def save(self, save_name, epoch):
+        Utils.save_net(save_name + str(epoch), self.net1)
+
+    def val(self):
+        self.net1.eval()
 
 def main():
     logging.basicConfig(filename='training.log', level=logging.DEBUG)
     logging.debug(ARGS)  # Log arguments
 
-    Utils.csvwrite('VALIDATION_LOSS.csv', ['mtl', 
-                   'direct', 'follow',
-                   'furtive', 'control'])
     epoch = ARGS.epoch
     if epoch == 0:
         mtl = MTL()
@@ -90,13 +114,13 @@ def main():
         furtive = NonMTL()
         control = NonMTL()
     else:
-        epoch = str(epoch)
+        epoch = str(epoch - 1)
         mtl = MTL(load_path='save/mtl'+epoch)
-        direct = NonMTL(load_path='save/mtl'+epoch)
+        direct = NonMTL(load_path='save/direct'+epoch)
         follow = NonMTL(load_path='save/follow'+epoch)
         furtive = NonMTL(load_path='save/furtive'+epoch)
         control = NonMTL(load_path='save/control'+epoch)
-        epoch = int(epoch)
+        epoch = int(epoch) + 1
 
     # Set Up PyTorch Environment
     # torch.set_default_tensor_type('torch.FloatTensor')
@@ -146,32 +170,42 @@ def main():
 
         data.train_index.epoch_complete = False
 
-        mtl.save('save/mtl', epoch)
-        direct.save('save/direct', epoch)
-        follow.save('save/follow', epoch)
-        furtive.save('save/furtive', epoch)
-        control.save('save/control', epoch)
+        mtl.save('mtl', epoch)
+        direct.save('direct', epoch)
+        follow.save('follow', epoch)
+        furtive.save('furtive', epoch)
+        control.save('control', epoch)
+
+        mtl.reset_loss(loss_list=['direct','follow','furtive'])
+        direct.reset_loss()
+        follow.reset_loss()
+        furtive.reset_loss()
+        control.reset_loss(loss_list=['direct','follow','furtive'])
+
+        mtl.val()
+        control.val()
+        direct.val()
+        follow.val()
+        furtive.val()
 
         while not data.val_index.epoch_complete:  # Epoch of training
             # Extract all data
             camera_data, metadata, target_data = batch.fill(data, data.val_index)
             dcamera, focamera, fucamera = camera_data.chunk(3, 0)
             dtarget, fotarget, futarget = target_data.chunk(3, 0)
+            dmeta, fometa, fumeta = metadata.chunk(3, 0)
 
-            mtl.forward(camera_data, metadata, target_data)
-            mtl.backward()
-
-            control.forward(camera_data, target_data)
-            control.backward()
-
+            mtl.forward(dcamera, dmeta, dtarget, key='direct')
+            control.forward(dcamera, dtarget, key='direct')
             direct.forward(dcamera, dtarget)
-            direct.backward()
 
+            mtl.forward(focamera, fometa, fotarget, key='follow')
+            control.forward(focamera, fotarget, key='follow')
             follow.forward(focamera, fotarget)
-            follow.backward()
 
+            mtl.forward(fucamera, fumeta, futarget, key='furtive')
+            control.forward(fucamera, futarget, key='furtive')
             furtive.forward(fucamera, futarget)
-            furtive.backward()
 
             if print_counter.step(data.val_index):
                 print('mode = train\n'
@@ -183,9 +217,15 @@ def main():
                               len(data.val_index.valid_data_moments),
                               epoch))
 
-        Utils.csvwrite('VALIDATION_LOSS.csv', [mtl.get_average(), 
+        Utils.csvwrite('VALIDATION_LOSS.csv', [mtl.get_average(key='direct'), 
+                       mtl.get_average(key='follow'), 
+                       mtl.get_average(key='furtive'), 
+                       control.get_average(key='direct'), 
+                       control.get_average(key='follow'), 
+                       control.get_average(key='furtive'), 
                        direct.get_average(), follow.get_average(),
-                       furtive.get_average(), control.get_average()])
+                       furtive.get_average()])
+
 
         data.val_index.epoch_complete = False
         epoch += 1
