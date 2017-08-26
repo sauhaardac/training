@@ -36,7 +36,7 @@ class Batch:
         self.data_ids = []
         self.camera_data = torch.FloatTensor(
             ARGS.batch_size, ARGS.nframes * 6, 94, 168).cuda()
-        self.metadata = torch.FloatTensor(ARGS.batch_size, 3, 11, 20).cuda()
+        self.metadata = torch.FloatTensor(ARGS.batch_size, 3, 13, 26).cuda()
         self.target_data = torch.FloatTensor(ARGS.batch_size, 20).cuda()
     
         ARGS.require_one = ('direct',)
@@ -103,7 +103,7 @@ class Batch:
         self.camera_data[data_number, :, :, :] = camera_data
 
         # Convert Behavioral Modes/Metadata to PyTorch Ready Tensors
-        metadata = torch.FloatTensor(3, 11, 20).cuda()
+        metadata = torch.FloatTensor(3, 13, 26).cuda()
         metadata_count = 2
         for cur_label in ['follow', 'direct', 'furtive']:
             if cur_label == 'caffe':

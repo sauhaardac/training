@@ -1,6 +1,7 @@
 """z2_color implementation with batch normalization."""
 import torch
 import torch.nn as nn
+import torch.nn.init as init
 import torch.nn.functional as F
 from torch.autograd import Variable
 
@@ -24,11 +25,10 @@ class Z2ColorBatchNorm(nn.Module):
         self.conv1_pool_norm = nn.BatchNorm2d(96)
 
         self.conv2 = nn.Conv2d(
-            in_channels=102,
+            in_channels=99,
             out_channels=256,
             kernel_size=3,
-            stride=2,
-            groups=2)
+            stride=2)
         self.conv2_pool = nn.MaxPool2d(kernel_size=3, stride=2)
         self.conv2_pool_norm = nn.BatchNorm2d(256)
         self.ip1 = nn.Linear(in_features=2560, out_features=512)
@@ -36,11 +36,11 @@ class Z2ColorBatchNorm(nn.Module):
         self.ip2 = nn.Linear(in_features=512, out_features=20)
 
         # Initialize weights
-        nn.init.normal(self.conv1.weight, std=0.00001)
-        nn.init.normal(self.conv2.weight, std=0.1)
+        init.normal(self.conv1.weight, std=0.00001)
+        init.normal(self.conv2.weight, std=0.1)
 
-        nn.init.xavier_normal(self.ip1.weight)
-        nn.init.xavier_normal(self.ip2.weight)
+        init.xavier_normal(self.ip1.weight)
+        init.xavier_normal(self.ip2.weight)
 
     def forward(self, x, metadata):
         # conv1
@@ -73,7 +73,7 @@ def unit_test():
             torch.randn(
                 5, 12, 94, 168)), Variable(
             torch.randn(
-                5, 6, 13, 26)))
+                5, 3, 13, 26)))
     print(a)
 
 

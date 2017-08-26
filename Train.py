@@ -9,15 +9,15 @@ import Utils
 
 import matplotlib.pyplot as plt
 
-from nets.SqueezeNet import SqueezeNet
-from nets.SqueezeNetOrig import SqueezeNetOrig
+from nets.Z2ColorBatchNorm import Z2ColorBatchNorm
+from nets.Z2ColorNoMeta import Z2ColorNoMeta
 import torch
 import torch.nn.utils as nnutils
 from torch.autograd import Variable
 
 class MTL:
     def __init__(self, load_path=None, loss_list=None):
-        self.net1 = SqueezeNet().cuda()
+        self.net1 = Z2ColorBatchNorm().cuda()
         self.criterion1 = torch.nn.MSELoss().cuda()
         self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
         self.loss = {'default':Utils.LossLog()}
@@ -60,7 +60,7 @@ class MTL:
 
 class NonMTL:
     def __init__(self, load_path=None, loss_list=None):
-        self.net1 = SqueezeNetOrig().cuda()
+        self.net1 = Z2ColorNoMeta().cuda()
         self.criterion1 = torch.nn.MSELoss().cuda()
         self.optimizer1 = torch.optim.Adadelta(self.net1.parameters())
 
